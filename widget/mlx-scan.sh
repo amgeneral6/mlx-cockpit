@@ -6,11 +6,11 @@ procs=$(ps ax -o args= 2>/dev/null | grep -E 'mlx_(lm|vlm)\.server' | grep -v gr
 echo '{"services":['
 first=1
 for port in 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090; do
-  metrics=$(curl -s --connect-timeout 0.5 --max-time 2 "http://localhost:$port/v1/metrics" 2>/dev/null | tr -d '\n')
+  metrics=$(curl -s --connect-timeout 1 --max-time 5 "http://localhost:$port/v1/metrics" 2>/dev/null | tr -d '\n')
   if [ -n "$metrics" ] && echo "$metrics" | grep -q '"summary"'; then
     : # valid metrics response
   else
-    health=$(curl -s --connect-timeout 0.5 --max-time 1 "http://localhost:$port/health" 2>/dev/null | tr -d '\n')
+    health=$(curl -s --connect-timeout 1 --max-time 5 "http://localhost:$port/health" 2>/dev/null | tr -d '\n')
     if [ -n "$health" ] && echo "$health" | grep -q '"status"'; then
       hmodel=$(echo "$health" | grep -oE '"model"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"model"[[:space:]]*:[[:space:]]*"//;s/"$//')
       [ -n "$hmodel" ] && metrics=$(printf '{"summary":null,"health_model":"%s"}' "$hmodel") || metrics='{"summary":null}'
@@ -35,9 +35,11 @@ for port in 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090; do
     [ -n "$hm" ] && model="$hm"
   fi
   if [ "$model" = "unknown" ]; then
-    # Try /health endpoint for model name
-    hresp=$(curl -s --connect-timeout 0.5 --max-time 1 "http://localhost:$port/health" 2>/dev/null)
-    hm=$(echo "$hresp" | grep -oE '"model"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"model"[[:space:]]*:[[:space:]]*"//;s/"$//')
+    # Try /health endpoint for model name (reuse earlier response or fetch)
+    if [ -z "$health" ]; then
+      health=$(curl -s --connect-timeout 1 --max-time 5 "http://localhost:$port/health" 2>/dev/null)
+    fi
+    hm=$(echo "$health" | grep -oE '"(model|loaded_model)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/"[^"]*"[[:space:]]*:[[:space:]]*"//;s/"$//')
     [ -n "$hm" ] && model="$hm"
   fi
   if [ "$stype" = "LLM" ] && [ "$model" != "unknown" ]; then
