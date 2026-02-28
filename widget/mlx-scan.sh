@@ -1,6 +1,10 @@
 #!/bin/bash
 # MLX Server Discovery — scans ports 8080-8090 for MLX servers
-# Called by the Übersicht widget every 3 seconds
+# Called by the Übersicht widget every 5 seconds
+# Caches last-known metrics so busy servers still show data during generation
+
+CACHE_DIR="$HOME/.mlx-cockpit/cache"
+mkdir -p "$CACHE_DIR"
 
 procs=$(ps ax -o args= 2>/dev/null | grep -E 'mlx_(lm|vlm)\.server' | grep -v grep | grep -v 'bash -c')
 echo '{"services":['
@@ -8,7 +12,8 @@ first=1
 for port in 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090; do
   metrics=$(curl -s --connect-timeout 1 --max-time 5 "http://localhost:$port/v1/metrics" 2>/dev/null | tr -d '\n')
   if [ -n "$metrics" ] && echo "$metrics" | grep -q '"summary"'; then
-    : # valid metrics response
+    # Got fresh metrics — cache them
+    echo "$metrics" > "$CACHE_DIR/$port.json"
   else
     health=$(curl -s --connect-timeout 1 --max-time 5 "http://localhost:$port/health" 2>/dev/null | tr -d '\n')
     if [ -n "$health" ] && echo "$health" | grep -q '"status"'; then
@@ -16,8 +21,15 @@ for port in 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090; do
       [ -n "$hmodel" ] && metrics=$(printf '{"summary":null,"health_model":"%s"}' "$hmodel") || metrics='{"summary":null}'
     elif nc -z localhost $port 2>/dev/null; then
       echo "$procs" | grep -q -- "--port $port" || continue
-      metrics='{"busy":true}'
+      # Server is busy generating — use cached metrics if available
+      if [ -f "$CACHE_DIR/$port.json" ]; then
+        metrics=$(cat "$CACHE_DIR/$port.json")
+      else
+        metrics='{"busy":true}'
+      fi
     else
+      # Port not open — clean up cache
+      rm -f "$CACHE_DIR/$port.json"
       continue
     fi
   fi
