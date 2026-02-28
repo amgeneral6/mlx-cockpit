@@ -3,7 +3,7 @@
 
 import { run } from "uebersicht";
 
-export const refreshFrequency = 3000;
+export const refreshFrequency = 5000;
 
 // --- Theme Presets ---
 const THEMES = {
