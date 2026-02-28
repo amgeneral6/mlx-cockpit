@@ -190,12 +190,12 @@ function renderPanels(services) {
 async function tryMetrics(p) {
   var metricsData = null;
   try {
-    var r = await fetch('http://localhost:' + p + '/v1/metrics', { signal: AbortSignal.timeout(1500) });
+    var r = await fetch('http://localhost:' + p + '/v1/metrics', { signal: AbortSignal.timeout(8000) });
     var d = await r.json();
     if (d.summary) metricsData = { port: p, data: d, online: true };
   } catch(e) {}
   try {
-    var r = await fetch('http://localhost:' + p + '/health', { signal: AbortSignal.timeout(1500) });
+    var r = await fetch('http://localhost:' + p + '/health', { signal: AbortSignal.timeout(8000) });
     var d = await r.json();
     if (d.status) {
       if (metricsData) {
