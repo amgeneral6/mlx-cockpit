@@ -146,13 +146,13 @@ async function tryMetrics(p) {
   let metricsData = null;
   // Try /v1/metrics first (patched servers)
   try {
-    const r = await fetch('http://localhost:' + p + '/v1/metrics', { signal: AbortSignal.timeout(1500) });
+    const r = await fetch('http://localhost:' + p + '/v1/metrics', { signal: AbortSignal.timeout(8000) });
     const d = await r.json();
     if (d.summary) metricsData = { port: p, data: d, online: true };
   } catch(e) {}
   // Always try /health for model name
   try {
-    const r = await fetch('http://localhost:' + p + '/health', { signal: AbortSignal.timeout(1500) });
+    const r = await fetch('http://localhost:' + p + '/health', { signal: AbortSignal.timeout(8000) });
     const d = await r.json();
     if (d.status) {
       if (metricsData) {
