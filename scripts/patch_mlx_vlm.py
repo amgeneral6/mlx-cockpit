@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-patch_mlx_vlm.py — Patch mlx_vlm/server.py with /v1/metrics endpoint.
+patch_mlx_vlm.py — Patch mlx_vlm/server.py with /v1/metrics and /dashboard endpoints.
 
 Usage:
     python3 patch_mlx_vlm.py <path-to-mlx_vlm-server.py>
@@ -24,6 +24,14 @@ def find_server_py():
         return None
 
 
+def load_dashboard_html():
+    """Load dashboard/index.html from the project tree."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    html_path = os.path.join(script_dir, "..", "dashboard", "index.html")
+    with open(html_path, "r") as f:
+        return f.read()
+
+
 def patch(server_path):
     with open(server_path, "r") as f:
         code = f.read()
@@ -41,7 +49,25 @@ def patch(server_path):
     insertions = 0
 
     # ---------------------------------------------------------------
-    # 1. Ensure CORSMiddleware import exists
+    # 1a. Ensure HTMLResponse import exists
+    # ---------------------------------------------------------------
+    if "from fastapi.responses import HTMLResponse" not in code:
+        anchor_resp = "from fastapi.responses import"
+        idx_resp = code.find(anchor_resp)
+        if idx_resp != -1:
+            eol_resp = code.index("\n", idx_resp)
+            code = code[:eol_resp + 1] + "from fastapi.responses import HTMLResponse\n" + code[eol_resp + 1:]
+        else:
+            # Insert after "from fastapi import" line
+            anchor_fi = "from fastapi import"
+            idx_fi = code.find(anchor_fi)
+            if idx_fi != -1:
+                eol_fi = code.index("\n", idx_fi)
+                code = code[:eol_fi + 1] + "from fastapi.responses import HTMLResponse\n" + code[eol_fi + 1:]
+        print("  Inserted HTMLResponse import")
+
+    # ---------------------------------------------------------------
+    # 1b. Ensure CORSMiddleware import exists
     # ---------------------------------------------------------------
     if "from fastapi.middleware.cors import CORSMiddleware" not in code:
         # Insert after "from fastapi" line
@@ -113,10 +139,14 @@ def patch(server_path):
 
     eol_cache = code.index("\n", idx_cache)
 
+    dashboard_html = load_dashboard_html().replace('\\', '\\\\').replace('"""', '\\"\\"\\"')
+
     store_snippet = '''
 
 # --- Metrics store (mirrors mlx_lm server format) ---
 _vlm_metrics_store: deque = deque(maxlen=200)
+
+_VLM_DASHBOARD_HTML = """''' + dashboard_html + '''"""
 
 
 def _record_vlm_metric(model, prompt_tokens, completion_tokens, latency, tokens_per_sec):
@@ -179,10 +209,16 @@ async def metrics_endpoint():
     }
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_endpoint():
+    """Serve a live HTML dashboard that polls /v1/metrics."""
+    return _VLM_DASHBOARD_HTML
+
+
 '''
     code = code[:idx_route] + metrics_route + code[idx_route:]
     insertions += 1
-    print("  [3/3] Inserted /v1/metrics endpoint")
+    print("  [3/3] Inserted /v1/metrics and /dashboard endpoints")
 
     # ---------------------------------------------------------------
     # Validate
@@ -194,8 +230,10 @@ async def metrics_endpoint():
 
     checks = [
         ("_vlm_metrics_store", "metrics store"),
+        ("_VLM_DASHBOARD_HTML", "dashboard HTML"),
         ("_record_vlm_metric", "recording function"),
         ("/v1/metrics", "metrics route"),
+        ("/dashboard", "dashboard route"),
         ("CORSMiddleware", "CORS middleware"),
     ]
     for needle, label in checks:
