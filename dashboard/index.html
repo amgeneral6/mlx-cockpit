@@ -51,6 +51,7 @@
 const SCAN_PORTS = [8080,8081,8082,8083,8084,8085,8086,8087,8088,8089,8090];
 const MODEL_COLORS = ["#58a6ff","#d2a8ff","#3fb950","#f97316","#ec4899"];
 let activePort = null;
+const lastKnown = {};  // Cache last-known state per port
 
 function switchTab(port) {
   activePort = port;
@@ -156,13 +157,23 @@ async function tryMetrics(p) {
     const d = await r.json();
     if (d.status) {
       if (metricsData) {
-        metricsData.data.health_model = d.model || null;
+        metricsData.data.health_model = d.model || d.loaded_model || null;
+        lastKnown[p] = metricsData;
         return metricsData;
       }
-      return { port: p, data: { summary: null, health_model: d.model || null, requests: [] }, online: true, healthOnly: true };
+      const result = { port: p, data: { summary: null, health_model: d.model || d.loaded_model || null, requests: [] }, online: true, healthOnly: true };
+      lastKnown[p] = result;
+      return result;
     }
   } catch(e) {}
-  return metricsData;
+  // Cache fresh results
+  if (metricsData) {
+    lastKnown[p] = metricsData;
+    return metricsData;
+  }
+  // Server didn't respond — return cached data if we've seen it before
+  if (lastKnown[p]) return lastKnown[p];
+  return null;
 }
 
 async function refresh() {
